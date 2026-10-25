@@ -34,10 +34,22 @@ class Hook(BaseModel):
     image: str
 
 
+# Notice: No nested models here! Everything is flat.
 class AuditResult(BaseModel):
     diagnosis: str
-    hook1: Hook
-    hook2: Hook
+    
+    hook1_angle_name: str
+    hook1_target: str
+    hook1_headline: str
+    hook1_text: str
+    hook1_image: str
+
+    hook2_angle_name: str
+    hook2_target: str
+    hook2_headline: str
+    hook2_text: str
+    hook2_image: str
+
     email_subject: str
     email_body: str
 
@@ -111,7 +123,6 @@ _client: genai.Client | None = None
 def _get_client() -> genai.Client:
     global _client
     if _client is None:
-        # The SDK handles retries automatically by default
         _client = genai.Client(api_key=settings.GEMINI_API_KEY)
     return _client
 
