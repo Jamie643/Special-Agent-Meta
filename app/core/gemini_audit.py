@@ -1,8 +1,4 @@
-"""Gemini audit generator — Phase 1 locked prompt.
-
-The SYSTEM prompt and WORKED_EXAMPLE below are frozen. Do not edit
-without re-testing output quality against the gold standard.
-"""
+"""Gemini audit generator — Phase 1 locked prompt."""
 
 from __future__ import annotations
 
@@ -11,7 +7,7 @@ import logging
 
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from app.config import settings
 
@@ -107,7 +103,7 @@ Image reference: {ad.image_url or "(none)"}
 """
 
 
-# ---------- Client (SDK retries handled inside) ----------
+# ---------- Client ----------
 
 _client: genai.Client | None = None
 
@@ -115,21 +111,12 @@ _client: genai.Client | None = None
 def _get_client() -> genai.Client:
     global _client
     if _client is None:
-        _client = genai.Client(
-            api_key=settings.GEMINI_API_KEY,
-            http_options=types.HttpOptions(
-                retry_options=types.HttpRetryOptions(
-                    attempts=5,
-                    initial_delay=2.0,
-                    max_delay=60.0,
-                )
-            ),
-        )
+        # The SDK handles retries automatically by default
+        _client = genai.Client(api_key=settings.GEMINI_API_KEY)
     return _client
 
 
 def generate_audit(ad: AdInput) -> AuditResult:
-    """Try each model in order. If all fail, raise — caller logs to `jobs`."""
     client = _get_client()
     prompt = _build_user_prompt(ad)
     last_err: Exception | None = None
@@ -147,7 +134,7 @@ def generate_audit(ad: AdInput) -> AuditResult:
                 ),
             )
             return AuditResult.model_validate(json.loads(resp.text))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.warning("model %s failed: %s", model_name, e)
             last_err = e
             continue
