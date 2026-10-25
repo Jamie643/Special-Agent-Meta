@@ -60,3 +60,11 @@ async def trigger_daily_job(background_tasks: BackgroundTasks):
     log.info("Received trigger for daily job.")
     background_tasks.add_task(run_daily_pipeline, bot)
     return {"ok": True, "message": "Daily job started in background"}
+from app.core.backfill import run_backfill
+
+@app.post("/internal/run-backfill")
+async def trigger_backfill(background_tasks: BackgroundTasks):
+    """Triggered manually to process existing leads."""
+    log.info("Received trigger for backfill job.")
+    background_tasks.add_task(run_backfill, bot)
+    return {"ok": True, "message": "Backfill started"}
