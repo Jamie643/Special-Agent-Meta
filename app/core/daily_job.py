@@ -55,7 +55,7 @@ async def run_daily_pipeline(bot: Bot) -> dict:
             store_res = db.table("stores").insert({"domain": domain, "name": raw_brand}).execute().data[0]
             store_id = store_res["id"]
             
-            # Insert lead (raw is now perfectly matched to the leads table)
+            # Insert lead
             raw["store_id"] = store_id
             lead_res = db.table("leads").insert(raw).execute().data[0]
             lead_id = lead_res["id"]
@@ -68,7 +68,7 @@ async def run_daily_pipeline(bot: Bot) -> dict:
                 primary_text=raw.get("ad_primary", ""),
                 image_url=raw.get("ad_image_url", ""),
                 days_active=raw.get("days_active", 60),
-                sender="James Liberty" # <--- Change this to your name if you want
+                sender="James Liberty" 
             )
             
             try:
@@ -78,16 +78,16 @@ async def run_daily_pipeline(bot: Bot) -> dict:
                 db.table("leads").update({"status": "skipped"}).eq("id", lead_id).execute()
                 continue
                 
-            # Save audit
+            # Save audit (Updated to use flat fields)
             db.table("audits").insert({
                 "lead_id": lead_id,
                 "diagnosis": audit.diagnosis,
-                "hook1_headline": audit.hook1.headline,
-                "hook1_text": audit.hook1.text,
-                "hook1_image": audit.hook1.image,
-                "hook2_headline": audit.hook2.headline,
-                "hook2_text": audit.hook2.text,
-                "hook2_image": audit.hook2.image,
+                "hook1_headline": audit.hook1_headline,
+                "hook1_text": audit.hook1_text,
+                "hook1_image": audit.hook1_image,
+                "hook2_headline": audit.hook2_headline,
+                "hook2_text": audit.hook2_text,
+                "hook2_image": audit.hook2_image,
                 "email_subject": audit.email_subject,
                 "email_body": audit.email_body,
             }).execute()
@@ -95,8 +95,25 @@ async def run_daily_pipeline(bot: Bot) -> dict:
             db.table("leads").update({"status": "audited"}).eq("id", lead_id).execute()
             stats["audits_made"] += 1
             
-            # Push to Telegram
-            card_text = format_internal_card({"brand": raw_brand, "domain": domain, "days_active": raw.get("days_active")}, audit)
+            # Push to Telegram (Updated to use flat fields)
+            class SimpleHook:
+                def __init__(self, angle, target, headline, text, image):
+                    self.angle_name = angle
+                    self.target = target
+                    self.headline = headline
+                    self.text = text
+                    self.image = image
+
+            class SimpleAudit:
+                def __init__(self, a):
+                    self.diagnosis = a.diagnosis
+                    self.hook1 = SimpleHook(a.hook1_angle_name, a.hook1_target, a.hook1_headline, a.hook1_text, a.hook1_image)
+                    self.hook2 = SimpleHook(a.hook2_angle_name, a.hook2_target, a.hook2_headline, a.hook2_text, a.hook2_image)
+                    self.email_subject = a.email_subject
+                    self.email_body = a.email_body
+
+            card_text = format_internal_card({"brand": raw_brand, "domain": domain, "days_active": raw.get("days_active")}, SimpleAudit(audit))
+            
             try:
                 await bot.send_message(
                     chat_id=settings.TELEGRAM_USER_ID,
