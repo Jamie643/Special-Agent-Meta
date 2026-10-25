@@ -59,7 +59,7 @@ async def run_daily_pipeline(bot: Bot) -> dict:
                 primary_text=raw["ad_primary"],
                 image_url=raw["ad_image_url"],
                 days_active=raw["days_active"],
-                sender="James Liberty" # <--- Make sure to change this to your name later!
+                sender="James Liberty" 
             )
             
             try:
