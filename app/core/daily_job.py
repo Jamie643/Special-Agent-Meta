@@ -22,7 +22,7 @@ async def run_daily_pipeline(bot: Bot) -> dict:
     
     try:
         # 1. Fetch from Apify
-        raw_leads = fetch_stale_ads(limit=25) # Fetch more than 10 to allow for deduplication
+        raw_leads = fetch_stale_ads(limit=25) 
         stats["leads_found"] = len(raw_leads)
         
         if not raw_leads:
@@ -35,42 +35,44 @@ async def run_daily_pipeline(bot: Bot) -> dict:
         # 2. Loop through leads
         for raw in raw_leads:
             if audits_pushed >= 10:
-                break # We only want 10 per day
+                break 
             
-            # --- FIX: Handle missing domains and remove 'brand' from leads table ---
+            # Extract info and clean the dictionary for the database
             raw_brand = raw.pop("brand", "Unknown Brand")
-            if not raw.get("domain") or raw.get("domain") == "unknown.com":
-                raw["domain"] = f"unknown-{raw.get('ad_archive_id', 'brand')}.com"
+            domain = raw.pop("domain", "unknown.com")
+            
+            if not domain or domain == "unknown.com":
+                domain = f"unknown-{raw.get('ad_archive_id', 'brand')}.com"
                 
             # Check if we've seen this domain before
-            existing_store = db.table("stores").select("id").eq("domain", raw["domain"]).execute().data
+            existing_store = db.table("stores").select("id").eq("domain", domain).execute().data
             if existing_store:
-                continue # Skip, we already audited this store
+                continue
                 
             # Insert new store
-            store_res = db.table("stores").insert({"domain": raw["domain"], "name": raw_brand}).execute().data[0]
+            store_res = db.table("stores").insert({"domain": domain, "name": raw_brand}).execute().data[0]
             store_id = store_res["id"]
             
-            # Insert lead
+            # Insert lead (raw is now perfectly matched to the leads table)
             raw["store_id"] = store_id
             lead_res = db.table("leads").insert(raw).execute().data[0]
             lead_id = lead_res["id"]
             
             # Generate audit with Gemini
             ad_input = AdInput(
-                domain=raw["domain"],
+                domain=domain,
                 brand=raw_brand,
                 headline=raw.get("ad_headline", ""),
                 primary_text=raw.get("ad_primary", ""),
                 image_url=raw.get("ad_image_url", ""),
                 days_active=raw.get("days_active", 60),
-                sender="James Liberty" # <--- Change this if you want a different sign-off
+                sender="James Liberty" # <--- Change this to your name if you want
             )
             
             try:
                 audit = generate_audit(ad_input)
             except Exception as e:
-                log.error("Gemini failed for %s: %s", raw["domain"], e)
+                log.error("Gemini failed for %s: %s", domain, e)
                 db.table("leads").update({"status": "skipped"}).eq("id", lead_id).execute()
                 continue
                 
@@ -92,7 +94,7 @@ async def run_daily_pipeline(bot: Bot) -> dict:
             stats["audits_made"] += 1
             
             # Push to Telegram
-            card_text = format_internal_card({"brand": raw_brand, **raw}, audit)
+            card_text = format_internal_card({"brand": raw_brand, "domain": domain, "days_active": raw.get("days_active")}, audit)
             try:
                 await bot.send_message(
                     chat_id=settings.TELEGRAM_USER_ID,
