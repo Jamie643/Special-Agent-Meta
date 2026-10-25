@@ -1,6 +1,7 @@
 """The daily pipeline: Fetch -> Audit -> Save -> Push to Telegram."""
 
 import logging
+import random
 from datetime import datetime
 from aiogram import Bot
 from app.config import settings
@@ -41,8 +42,9 @@ async def run_daily_pipeline(bot: Bot) -> dict:
             raw_brand = raw.pop("brand", "Unknown Brand")
             domain = raw.pop("domain", "unknown.com")
             
-            if not domain or domain == "unknown.com":
-                domain = f"unknown-{raw.get('ad_archive_id', 'brand')}.com"
+            # Ensure every missing domain gets a UNIQUE name so they aren't skipped
+            if not domain or domain == "unknown.com" or domain == "unknown-.com":
+                domain = f"unknown-{random.randint(1000, 9999)}-{raw.get('ad_archive_id', 'brand')}.com"
                 
             # Check if we've seen this domain before
             existing_store = db.table("stores").select("id").eq("domain", domain).execute().data
