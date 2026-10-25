@@ -11,12 +11,10 @@ from app.db.client import get_db
 log = logging.getLogger(__name__)
 
 async def run_backfill(bot: Bot) -> dict:
-    """Finds pending leads, generates audits, and sends to Telegram."""
     db = get_db()
     stats = {"audits_made": 0, "error": None}
     
     try:
-        # Find up to 10 leads that haven't been audited yet
         leads = db.table("leads").select("*").eq("status", "new").limit(10).execute().data
         
         if not leads:
@@ -24,8 +22,7 @@ async def run_backfill(bot: Bot) -> dict:
             return stats
 
         for lead in leads:
-            # We need the domain and brand from the stores table
-            store = db.table("stores").select("*").eq("id", lead["store_id"]).single().execute().data
+            store = db.table("stores").select("*").eq("id", lead["store_id"]).execute().data[0]
             domain = store.get("domain", "unknown.com")
             brand = store.get("name", "Unknown Brand")
             
@@ -63,24 +60,9 @@ async def run_backfill(bot: Bot) -> dict:
             db.table("leads").update({"status": "audited"}).eq("id", lead["id"]).execute()
             stats["audits_made"] += 1
             
-            # Create a fake object so the formatter works
-            class SimpleHook:
-                def __init__(self, angle, target, headline, text, image):
-                    self.angle_name = angle
-                    self.target = target
-                    self.headline = headline
-                    self.text = text
-                    self.image = image
-
-            class SimpleAudit:
-                def __init__(self, a):
-                    self.diagnosis = a.diagnosis
-                    self.hook1 = SimpleHook(a.hook1_angle_name, a.hook1_target, a.hook1_headline, a.hook1_text, a.hook1_image)
-                    self.hook2 = SimpleHook(a.hook2_angle_name, a.hook2_target, a.hook2_headline, a.hook2_text, a.hook2_image)
-                    self.email_subject = a.email_subject
-                    self.email_body = a.email_body
-
-            card_text = format_internal_card({"brand": brand, "domain": domain, "days_active": lead.get("days_active")}, SimpleAudit(audit))
+            saved_audit = db.table("audits").select("*").eq("lead_id", lead["id"]).execute().data[0]
+            
+            card_text = format_internal_card({"brand": brand, "domain": domain, "days_active": lead.get("days_active")}, saved_audit)
             
             try:
                 await bot.send_message(
