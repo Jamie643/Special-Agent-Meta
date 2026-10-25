@@ -36,6 +36,11 @@ async def run_daily_pipeline(bot: Bot) -> dict:
         for raw in raw_leads:
             if audits_pushed >= 10:
                 break # We only want 10 per day
+            
+            # --- FIX: Handle missing domains and remove 'brand' from leads table ---
+            raw_brand = raw.pop("brand", "Unknown Brand")
+            if not raw.get("domain") or raw.get("domain") == "unknown.com":
+                raw["domain"] = f"unknown-{raw.get('ad_archive_id', 'brand')}.com"
                 
             # Check if we've seen this domain before
             existing_store = db.table("stores").select("id").eq("domain", raw["domain"]).execute().data
@@ -43,7 +48,7 @@ async def run_daily_pipeline(bot: Bot) -> dict:
                 continue # Skip, we already audited this store
                 
             # Insert new store
-            store_res = db.table("stores").insert({"domain": raw["domain"], "name": raw["brand"]}).execute().data[0]
+            store_res = db.table("stores").insert({"domain": raw["domain"], "name": raw_brand}).execute().data[0]
             store_id = store_res["id"]
             
             # Insert lead
@@ -54,12 +59,12 @@ async def run_daily_pipeline(bot: Bot) -> dict:
             # Generate audit with Gemini
             ad_input = AdInput(
                 domain=raw["domain"],
-                brand=raw["brand"],
-                headline=raw["ad_headline"],
-                primary_text=raw["ad_primary"],
-                image_url=raw["ad_image_url"],
-                days_active=raw["days_active"],
-                sender="James Liberty" 
+                brand=raw_brand,
+                headline=raw.get("ad_headline", ""),
+                primary_text=raw.get("ad_primary", ""),
+                image_url=raw.get("ad_image_url", ""),
+                days_active=raw.get("days_active", 60),
+                sender="James Liberty" # <--- Change this if you want a different sign-off
             )
             
             try:
@@ -87,7 +92,7 @@ async def run_daily_pipeline(bot: Bot) -> dict:
             stats["audits_made"] += 1
             
             # Push to Telegram
-            card_text = format_internal_card(raw, audit)
+            card_text = format_internal_card({"brand": raw_brand, **raw}, audit)
             try:
                 await bot.send_message(
                     chat_id=settings.TELEGRAM_USER_ID,
