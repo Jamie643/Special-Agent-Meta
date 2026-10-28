@@ -1,0 +1,31 @@
+name: Daily Meta Ad Scan
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # 8:00 AM UTC every day
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
+
+jobs:
+  scan-and-audit:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      
+      - name: Install dependencies
+        run: pip install meta-ads-collector supabase google-genai python-dotenv
+      
+      - name: Run daily pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
+        run: python -m app.core.daily_job
