@@ -1,82 +1,53 @@
-"""Fetches stale ads from the Meta Ad Library via Apify."""
+"""Fetches stale ads from BOTH Facebook and Instagram using meta-ads-collector."""
 
 import logging
-from apify_client import ApifyClient
+from meta_ads_collector import MetaAdsCollector, FilterConfig
 from app.config import settings
 
 log = logging.getLogger(__name__)
 
-ACTOR_ID = "brilliant_gum/facebook-ads-library-scraper"
-
 def fetch_stale_ads(limit: int = 10) -> list[dict]:
-    """Fetches active ads that have been running for 60+ days."""
-    if not hasattr(settings, "APIFY_API_TOKEN"):
-        return []
-
-    client = ApifyClient(settings.APIFY_API_TOKEN)
+    """Fetches active ads running 60+ days on Facebook AND Instagram."""
     
-    run_input = {
-        "searchTerms": ["shop", "buy", "collection"],
-        "country": "US",
-        "activeStatus": "active",
-        "minDaysRunning": 60,
-        "maxResults": limit,
-        "scrapeAdDetails": True
-    }
+    # THE KEY: Both platforms in one filter
+    filters = FilterConfig(
+        publisher_platforms=["facebook", "instagram"],
+        has_video=True,  # Video ads = better for your demo ad workflow
+    )
 
-    log.info("Starting Apify actor %s...", ACTOR_ID)
+    leads = []
     try:
-        run = client.actor(ACTOR_ID).call(run_input=run_input, timeout_secs=120)
-        if not run:
-            return []
-
-        dataset_items = client.dataset(run["defaultDatasetId"]).list_items().items
-        log.info("Apify returned %d ads.", len(dataset_items))
-        
-        leads = []
-        for item in dataset_items:
-            snapshot = item.get("snapshot", {})
-            
-            # Dig for the real URL (Meta Ad Library stores it in a few places)
-            domain = ""
-            link_url = snapshot.get("linkUrl")
-            if not link_url:
-                cards = snapshot.get("cards", [])
-                if cards:
-                    link_url = cards[0].get("linkUrl")
-            if not link_url:
-                body = snapshot.get("body", {})
-                link_url = body.get("linkUrl")
+        with MetaAdsCollector() as collector:
+            for ad in collector.search(
+                query="shop",  # Or "buy", "collection" - rotate these
+                country="US",
+                max_results=limit,
+                filter_config=filters
+            ):
+                # Extract the Facebook Page Link (for finding their IG)
+                page_link = ""
+                if ad.page and hasattr(ad.page, 'page_url'):
+                    page_link = ad.page.page_url
                 
-            if link_url:
-                domain = link_url.split("//")[-1].split("/")[0]
-            
-            # If we STILL can't find a domain, fallback to unknown
-            if not domain:
+                # Get the domain from the CTA link if available
                 domain = "unknown.com"
-            
-            brand = item.get("pageName") or domain.split(".")[0].title()
-            
-            # Grab the primary text (it's sometimes a string, sometimes a dict)
-            primary_text = ""
-            body = snapshot.get("body", {})
-            if isinstance(body, str):
-                primary_text = body
-            elif isinstance(body, dict):
-                primary_text = body.get("text", "")
-            
-            leads.append({
-                "domain": domain,
-                "brand": brand,
-                "ad_archive_id": str(item.get("adArchiveID", "")),
-                "days_active": item.get("daysActive", 60),
-                "ad_headline": snapshot.get("title", ""),
-                "ad_primary": primary_text,
-                "ad_image_url": snapshot.get("images", [{}])[0].get("originalImageUrl", "") if snapshot.get("images") else "",
-                "ad_snapshot": item
-            })
-            
+                if ad.snapshot and hasattr(ad.snapshot, 'link_url') and ad.snapshot.link_url:
+                    domain = ad.snapshot.link_url.split("//")[-1].split("/")[0]
+                
+                leads.append({
+                    "domain": domain,
+                    "brand": ad.page.name if ad.page else "Unknown Brand",
+                    "ad_archive_id": str(ad.id),
+                    "days_active": getattr(ad, 'days_active', 60),
+                    "ad_headline": getattr(ad.snapshot, 'title', "") if ad.snapshot else "",
+                    "ad_primary": getattr(ad.snapshot, 'body', {}).get('text', "") if ad.snapshot and isinstance(ad.snapshot.body, dict) else "",
+                    "ad_image_url": "",
+                    "page_profile_uri": page_link,  # THE GOLDMINE for finding IG
+                })
+        
+        log.info("Fetched %d ads from FB+IG.", len(leads))
         return leads
+        
     except Exception as e:
-        log.error("Apify error: %s", e)
+        log.error("MetaAdsCollector error: %s", e)
         return []
