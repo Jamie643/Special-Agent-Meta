@@ -25,31 +25,18 @@ class AdInput(BaseModel):
     image_url: str | None = None
     days_active: int | None = None
 
-
-class Hook(BaseModel):
-    angle_name: str
-    target: str
-    headline: str
-    text: str
-    image: str
-
-
-# Notice: No nested models here! Everything is flat.
 class AuditResult(BaseModel):
     diagnosis: str
-    
     hook1_angle_name: str
     hook1_target: str
     hook1_headline: str
     hook1_text: str
     hook1_image: str
-
     hook2_angle_name: str
     hook2_target: str
     hook2_headline: str
     hook2_text: str
     hook2_image: str
-
     email_subject: str
     email_body: str
 
@@ -115,10 +102,7 @@ Image reference: {ad.image_url or "(none)"}
 """
 
 
-# ---------- Client ----------
-
 _client: genai.Client | None = None
-
 
 def _get_client() -> genai.Client:
     global _client
