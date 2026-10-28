@@ -2,12 +2,13 @@ name: Daily Meta Ad Scan
 
 on:
   schedule:
-    - cron: '0 8 * * *'  # 8:00 AM UTC every day
-  workflow_dispatch:  # Allows manual trigger from GitHub UI
+    - cron: '0 8 * * *'  # 8:00 AM UTC daily
+  workflow_dispatch:      # Lets you click "Run workflow" to test now
 
 jobs:
   scan-and-audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     
     steps:
       - name: Checkout code
@@ -19,7 +20,10 @@ jobs:
           python-version: '3.13'
       
       - name: Install dependencies
-        run: pip install meta-ads-collector supabase google-genai python-dotenv
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install meta-ads-collector
       
       - name: Run daily pipeline
         env:
