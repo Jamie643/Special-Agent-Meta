@@ -14,7 +14,6 @@ from app.db.client import get_db
 log = logging.getLogger(__name__)
 
 async def run_daily_pipeline(bot: Bot) -> dict:
-    """Runs the full daily job. Returns a summary dict."""
     db = get_db()
     job_record = db.table("jobs").insert({"kind": "daily"}).execute().data[0]
     job_id = job_record["id"]
@@ -22,7 +21,6 @@ async def run_daily_pipeline(bot: Bot) -> dict:
     stats = {"leads_found": 0, "audits_made": 0, "error": None}
     
     try:
-        # 1. Fetch from Apify
         raw_leads = fetch_stale_ads(limit=25) 
         stats["leads_found"] = len(raw_leads)
         
@@ -33,34 +31,28 @@ async def run_daily_pipeline(bot: Bot) -> dict:
 
         audits_pushed = 0
         
-        # 2. Loop through leads
         for raw in raw_leads:
             if audits_pushed >= 10:
                 break 
             
-            # Extract info and clean the dictionary for the database
             raw_brand = raw.pop("brand", "Unknown Brand")
             domain = raw.pop("domain", "unknown.com")
+            page_uri = raw.pop("page_profile_uri", "")
             
-            # Ensure every missing domain gets a UNIQUE name so they aren't skipped
             if not domain or domain == "unknown.com" or domain == "unknown-.com":
                 domain = f"unknown-{random.randint(1000, 9999)}-{raw.get('ad_archive_id', 'brand')}.com"
                 
-            # Check if we've seen this domain before
             existing_store = db.table("stores").select("id").eq("domain", domain).execute().data
             if existing_store:
                 continue
                 
-            # Insert new store
             store_res = db.table("stores").insert({"domain": domain, "name": raw_brand}).execute().data[0]
             store_id = store_res["id"]
             
-            # Insert lead
             raw["store_id"] = store_id
             lead_res = db.table("leads").insert(raw).execute().data[0]
             lead_id = lead_res["id"]
             
-            # Generate audit with Gemini
             ad_input = AdInput(
                 domain=domain,
                 brand=raw_brand,
@@ -78,7 +70,6 @@ async def run_daily_pipeline(bot: Bot) -> dict:
                 db.table("leads").update({"status": "skipped"}).eq("id", lead_id).execute()
                 continue
                 
-            # Save audit (Updated to use flat fields)
             db.table("audits").insert({
                 "lead_id": lead_id,
                 "diagnosis": audit.diagnosis,
@@ -95,24 +86,8 @@ async def run_daily_pipeline(bot: Bot) -> dict:
             db.table("leads").update({"status": "audited"}).eq("id", lead_id).execute()
             stats["audits_made"] += 1
             
-            # Push to Telegram (Updated to use flat fields)
-            class SimpleHook:
-                def __init__(self, angle, target, headline, text, image):
-                    self.angle_name = angle
-                    self.target = target
-                    self.headline = headline
-                    self.text = text
-                    self.image = image
-
-            class SimpleAudit:
-                def __init__(self, a):
-                    self.diagnosis = a.diagnosis
-                    self.hook1 = SimpleHook(a.hook1_angle_name, a.hook1_target, a.hook1_headline, a.hook1_text, a.hook1_image)
-                    self.hook2 = SimpleHook(a.hook2_angle_name, a.hook2_target, a.hook2_headline, a.hook2_text, a.hook2_image)
-                    self.email_subject = a.email_subject
-                    self.email_body = a.email_body
-
-            card_text = format_internal_card({"brand": raw_brand, "domain": domain, "days_active": raw.get("days_active")}, SimpleAudit(audit))
+            saved_audit = db.table("audits").select("*").eq("lead_id", lead_id).execute().data[0]
+            card_text = format_internal_card({"brand": raw_brand, "domain": domain, "days_active": raw.get("days_active"), "page_profile_uri": page_uri}, saved_audit)
             
             try:
                 await bot.send_message(
@@ -124,7 +99,6 @@ async def run_daily_pipeline(bot: Bot) -> dict:
             except Exception as e:
                 log.error("Failed to send Telegram message: %s", e)
 
-        # Mark job as finished
         db.table("jobs").update({"finished_at": datetime.now().isoformat(), **stats}).eq("id", job_id).execute()
         return stats
         
@@ -133,13 +107,18 @@ async def run_daily_pipeline(bot: Bot) -> dict:
         stats["error"] = str(e)
         db.table("jobs").update({"finished_at": datetime.now().isoformat(), **stats}).eq("id", job_id).execute()
         return stats
+
+
 if __name__ == "__main__":
     import asyncio
-    from aiogram import Bot
-    from app.config import settings
+    from aiogram.client.default import DefaultBotProperties
+    from aiogram.enums import ParseMode
     
     async def main():
-        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+        bot = Bot(
+            token=settings.TELEGRAM_BOT_TOKEN,
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        )
         result = await run_daily_pipeline(bot)
         print(f"Pipeline result: {result}")
         await bot.session.close()
