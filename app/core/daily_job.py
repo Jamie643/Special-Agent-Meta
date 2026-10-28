@@ -133,3 +133,15 @@ async def run_daily_pipeline(bot: Bot) -> dict:
         stats["error"] = str(e)
         db.table("jobs").update({"finished_at": datetime.now().isoformat(), **stats}).eq("id", job_id).execute()
         return stats
+if __name__ == "__main__":
+    import asyncio
+    from aiogram import Bot
+    from app.config import settings
+    
+    async def main():
+        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+        result = await run_daily_pipeline(bot)
+        print(f"Pipeline result: {result}")
+        await bot.session.close()
+    
+    asyncio.run(main())
