@@ -7,6 +7,7 @@ def format_internal_card(lead: dict, audit: dict) -> str:
     brand = lead.get("brand") or lead.get("domain") or "Unknown brand"
     domain = lead.get("domain", "")
     days = lead.get("days_active") or "?"
+    page_uri = lead.get("page_profile_uri", "")
     
     card = (
         f"🏪 <b>{html.escape(brand)}</b> — {html.escape(domain)}\n"
@@ -16,8 +17,11 @@ def format_internal_card(lead: dict, audit: dict) -> str:
         f"📧 <b>THE EMAIL</b>\n\n"
         f"<b>Subject:</b> {html.escape(audit['email_subject'])}\n\n"
         f"<pre>{html.escape(audit['email_body'])}</pre>\n\n"
-        f"🔍 <a href='https://hunter.io/search/{html.escape(domain)}'>Find Contact Email</a>"
     )
+    
+    if page_uri:
+        card += f"🔗 <a href='{html.escape(page_uri)}'>Open Facebook Page (Find IG Link)</a>\n"
+    
     return card
 
 
