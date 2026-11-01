@@ -1,60 +1,77 @@
-"""Fetches stale ads from Facebook & Instagram using meta-ads-collector."""
+"""Fetches stale ads from the Meta Ad Library via Apify."""
 
 import logging
-import os
-from meta_ads_collector import MetaAdsCollector, FilterConfig
+from apify_client import ApifyClient
+from app.config import settings
 
 log = logging.getLogger(__name__)
 
-def fetch_stale_ads(limit: int = 10) -> list[dict]:
-    """Fetches active ads running 60+ days on Facebook AND Instagram."""
-    
-    filters = FilterConfig(
-        publisher_platforms=["facebook", "instagram"],
-    )
+# The Apify actor we are using
+ACTOR_ID = "brilliant_gum/facebook-ads-library-scraper"
 
-    # Get the proxy from GitHub Secrets
-    proxy_url = os.environ.get("META_ADS_PROXY", "")
-    
-    if proxy_url:
-        log.info("Using proxy for MetaAdsCollector.")
-    else:
-        log.warning("No proxy found. Scraping directly (might get rate limited).")
+def fetch_stale_ads(country: str, limit: int = 10) -> list[dict]:
+    """Fetches active ads running 60+ days in a specific country."""
+    if not hasattr(settings, "APIFY_API_TOKEN"):
+        log.error("APIFY_API_TOKEN is missing from settings!")
+        return []
 
-    leads = []
+    client = ApifyClient(settings.APIFY_API_TOKEN)
+    
+    # Optimized input to save quota and get exactly what we need
+    run_input = {
+        "searchTerms": ["shop", "buy", "collection"],
+        "country": country,
+        "activeStatus": "active",
+        "minDaysRunning": 60,
+        "maxResults": limit,
+        "scrapeAdDetails": True
+    }
+
+    log.info("Starting Apify actor for country: %s...", country)
     try:
-        # Pass the proxy to the collector
-        with MetaAdsCollector(proxy=proxy_url if proxy_url else None) as collector:
-            for ad in collector.search(
-                query="shop", 
-                country="US",
-                max_results=limit,
-                filter_config=filters
-            ):
-                # Extract the Facebook Page Link
-                page_link = ""
-                if ad.page and hasattr(ad.page, 'page_url'):
-                    page_link = ad.page.page_url
-                
-                # Get the domain from the CTA link if available
-                domain = "unknown.com"
-                if ad.snapshot and hasattr(ad.snapshot, 'link_url') and ad.snapshot.link_url:
-                    domain = ad.snapshot.link_url.split("//")[-1].split("/")[0]
-                
-                leads.append({
-                    "domain": domain,
-                    "brand": ad.page.name if ad.page else "Unknown Brand",
-                    "ad_archive_id": str(ad.id),
-                    "days_active": getattr(ad, 'days_active', 60),
-                    "ad_headline": getattr(ad.snapshot, 'title', "") if ad.snapshot else "",
-                    "ad_primary": getattr(ad.snapshot, 'body', {}).get('text', "") if ad.snapshot and isinstance(ad.snapshot.body, dict) else "",
-                    "ad_image_url": "",
-                    "page_profile_uri": page_link,
-                })
+        run = client.actor(ACTOR_ID).call(run_input=run_input, timeout_secs=120)
+        if not run:
+            return []
+
+        dataset_items = client.dataset(run["defaultDatasetId"]).list_items().items
+        log.info("Apify returned %d ads.", len(dataset_items))
         
-        log.info("Fetched %d ads from FB+IG.", len(leads))
+        leads = []
+        for item in dataset_items:
+            snapshot = item.get("snapshot", {})
+            
+            # Get the domain
+            domain = "unknown.com"
+            link_url = snapshot.get("linkUrl")
+            if not link_url:
+                cards = snapshot.get("cards", [])
+                if cards:
+                    link_url = cards[0].get("linkUrl")
+            if link_url:
+                domain = link_url.split("//")[-1].split("/")[0]
+            
+            brand = item.get("pageName") or domain.split(".")[0].title()
+            
+            # Get the text
+            primary_text = ""
+            body = snapshot.get("body", {})
+            if isinstance(body, str):
+                primary_text = body
+            elif isinstance(body, dict):
+                primary_text = body.get("text", "")
+            
+            leads.append({
+                "domain": domain,
+                "brand": brand,
+                "ad_archive_id": str(item.get("adArchiveID", "")),
+                "days_active": item.get("daysActive", 60),
+                "ad_headline": snapshot.get("title", ""),
+                "ad_primary": primary_text,
+                "ad_image_url": snapshot.get("images", [{}])[0].get("originalImageUrl", "") if snapshot.get("images") else "",
+                "page_profile_uri": snapshot.get("page_profile_uri", ""),
+            })
+            
         return leads
-        
     except Exception as e:
-        log.error("MetaAdsCollector error: %s", e)
+        log.error("Apify error: %s", e)
         return []
