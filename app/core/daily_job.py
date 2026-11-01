@@ -21,7 +21,13 @@ async def run_daily_pipeline(bot: Bot) -> dict:
     stats = {"leads_found": 0, "audits_made": 0, "error": None}
     
     try:
-        raw_leads = fetch_stale_ads(limit=25) 
+        # THE COUNTRY ROTATOR: Pick a random country for this run
+        # This guarantees you get fresh stores and don't waste Apify credits.
+        countries = ["US", "GB", "CA", "AU", "DE", "FR"]
+        chosen_country = random.choice(countries)
+        log.info("Today's target country: %s", chosen_country)
+
+        raw_leads = fetch_stale_ads(country=chosen_country, limit=15) 
         stats["leads_found"] = len(raw_leads)
         
         if not raw_leads:
@@ -44,6 +50,7 @@ async def run_daily_pipeline(bot: Bot) -> dict:
                 
             existing_store = db.table("stores").select("id").eq("domain", domain).execute().data
             if existing_store:
+                log.info("Skipping %s (already in database).", domain)
                 continue
                 
             store_res = db.table("stores").insert({"domain": domain, "name": raw_brand}).execute().data[0]
