@@ -31,4 +31,5 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
+          META_ADS_PROXY: ${{ secrets.META_ADS_PROXY }} # <-- Passes the proxy safely
         run: python -m app.core.daily_job
