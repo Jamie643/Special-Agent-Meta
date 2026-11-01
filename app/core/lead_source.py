@@ -1,6 +1,7 @@
 """Fetches stale ads from Facebook & Instagram using meta-ads-collector."""
 
 import logging
+import os
 from meta_ads_collector import MetaAdsCollector, FilterConfig
 
 log = logging.getLogger(__name__)
@@ -12,16 +13,25 @@ def fetch_stale_ads(limit: int = 10) -> list[dict]:
         publisher_platforms=["facebook", "instagram"],
     )
 
+    # Get the proxy from GitHub Secrets
+    proxy_url = os.environ.get("META_ADS_PROXY", "")
+    
+    if proxy_url:
+        log.info("Using proxy for MetaAdsCollector.")
+    else:
+        log.warning("No proxy found. Scraping directly (might get rate limited).")
+
     leads = []
     try:
-        with MetaAdsCollector() as collector:
+        # Pass the proxy to the collector
+        with MetaAdsCollector(proxy=proxy_url if proxy_url else None) as collector:
             for ad in collector.search(
                 query="shop", 
                 country="US",
                 max_results=limit,
                 filter_config=filters
             ):
-                # Extract the Facebook Page Link (for finding their IG)
+                # Extract the Facebook Page Link
                 page_link = ""
                 if ad.page and hasattr(ad.page, 'page_url'):
                     page_link = ad.page.page_url
@@ -39,7 +49,7 @@ def fetch_stale_ads(limit: int = 10) -> list[dict]:
                     "ad_headline": getattr(ad.snapshot, 'title', "") if ad.snapshot else "",
                     "ad_primary": getattr(ad.snapshot, 'body', {}).get('text', "") if ad.snapshot and isinstance(ad.snapshot.body, dict) else "",
                     "ad_image_url": "",
-                    "page_profile_uri": page_link,  # For finding their IG
+                    "page_profile_uri": page_link,
                 })
         
         log.info("Fetched %d ads from FB+IG.", len(leads))
