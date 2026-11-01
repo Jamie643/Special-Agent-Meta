@@ -1,8 +1,8 @@
-name: Daily Meta Ad Scan
+name: Weekly Meta Ad Scan
 
 on:
   schedule:
-    - cron: '0 8 * * *'  # 8:00 AM UTC daily
+    - cron: '0 8 * * 1'  # Runs every Monday at 8:00 AM UTC
   workflow_dispatch:      # Lets you click "Run workflow" to test now
 
 jobs:
@@ -24,12 +24,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: Run daily pipeline
+      - name: Run weekly pipeline
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
-          META_ADS_PROXY: ${{ secrets.META_ADS_PROXY }} # <-- Passes the proxy safely
+          APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
         run: python -m app.core.daily_job
