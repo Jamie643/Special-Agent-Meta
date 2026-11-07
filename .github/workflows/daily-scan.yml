@@ -1,14 +1,14 @@
-name: Weekly Meta Ad Scan
+name: Daily Meta Ad Scan
 
 on:
   schedule:
-    - cron: '0 8 * * 1'  # Runs every Monday at 8:00 AM UTC
+    - cron: '0 8 * * *'  # 8:00 AM UTC daily
   workflow_dispatch:      # Lets you click "Run workflow" to test now
 
 jobs:
   scan-and-audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     
     steps:
       - name: Checkout code
@@ -24,7 +24,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: Run weekly pipeline
+      - name: Run daily pipeline
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
