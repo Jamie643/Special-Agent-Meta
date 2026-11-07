@@ -26,8 +26,8 @@ async def run_daily_pipeline(bot: Bot) -> dict:
         chosen_country = random.choice(countries)
         log.info("Today's target country: %s", chosen_country)
 
-        # Fetch exactly 15 ads to save quota
-        raw_leads = fetch_stale_ads(country=chosen_country, limit=15) 
+        # Fetch exactly 10 ads to save quota
+        raw_leads = fetch_stale_ads(country=chosen_country, limit=10) 
         stats["leads_found"] = len(raw_leads)
         
         if not raw_leads:
@@ -38,7 +38,6 @@ async def run_daily_pipeline(bot: Bot) -> dict:
         processed_count = 0
         
         for raw in raw_leads:
-            # HARD STOP: Only ever process 10 items per run
             if processed_count >= 10:
                 break 
             
@@ -48,7 +47,6 @@ async def run_daily_pipeline(bot: Bot) -> dict:
             domain = raw.pop("domain", "unknown.com")
             page_uri = raw.pop("page_profile_uri", "")
             
-            # If domain is missing, generate a random one to avoid crashing
             if not domain or domain == "unknown.com" or domain == "unknown-.com":
                 domain = f"unknown-{random.randint(1000, 9999)}-{raw.get('ad_archive_id', 'brand')}.com"
                 
