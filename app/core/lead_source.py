@@ -8,7 +8,7 @@ log = logging.getLogger(__name__)
 
 ACTOR_ID = "brilliant_gum/facebook-ads-library-scraper"
 
-def fetch_stale_ads(country: str, limit: int = 15) -> list[dict]:
+def fetch_stale_ads(country: str, limit: int = 10) -> list[dict]:
     """Fetches active ads that have been running for 60+ days."""
     if not hasattr(settings, "APIFY_API_TOKEN"):
         log.error("APIFY_API_TOKEN is missing from settings!")
@@ -16,8 +16,9 @@ def fetch_stale_ads(country: str, limit: int = 15) -> list[dict]:
 
     client = ApifyClient(settings.APIFY_API_TOKEN)
     
+    # OPTIMIZED: 1 search term, max 10 ads to save credits
     run_input = {
-        "searchTerms": ["shop", "buy", "collection"],
+        "searchTerms": ["shop"],
         "country": country,
         "activeStatus": "active",
         "minDaysRunning": 60,
@@ -27,7 +28,7 @@ def fetch_stale_ads(country: str, limit: int = 15) -> list[dict]:
 
     log.info("Starting Apify actor for country: %s...", country)
     try:
-        run = client.actor(ACTOR_ID).call(run_input=run_input, timeout_secs=120)
+        run = client.actor(ACTOR_ID).call(run_input=run_input, timeout_secs=180)
         if not run:
             return []
 
