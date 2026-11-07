@@ -16,19 +16,19 @@ def fetch_stale_ads(country: str, limit: int = 10) -> list[dict]:
 
     client = ApifyClient(settings.APIFY_API_TOKEN)
     
-    # OPTIMIZED: 1 search term, max 10 ads to save credits
+    # FIXED: Changed to maxAdsPerSearch so it respects the limit
     run_input = {
         "searchTerms": ["shop"],
         "country": country,
         "activeStatus": "active",
         "minDaysRunning": 60,
-        "maxResults": limit,
+        "maxAdsPerSearch": limit, 
         "scrapeAdDetails": True
     }
 
     log.info("Starting Apify actor for country: %s...", country)
     try:
-        run = client.actor(ACTOR_ID).call(run_input=run_input, timeout_secs=180)
+        run = client.actor(ACTOR_ID).call(run_input=run_input, timeout_secs=120)
         if not run:
             return []
 
@@ -37,7 +37,6 @@ def fetch_stale_ads(country: str, limit: int = 10) -> list[dict]:
         
         leads = []
         for item in dataset_items:
-            # 1. Get the real domain from the creative's destinationUrl
             domain = "unknown.com"
             creatives = item.get("creatives", [])
             if creatives:
@@ -45,14 +44,10 @@ def fetch_stale_ads(country: str, limit: int = 10) -> list[dict]:
                 if dest_url and "facebook.com" not in dest_url and "instagram.com" not in dest_url:
                     domain = dest_url.split("//")[-1].split("/")[0]
 
-            # 2. Get the brand name
             brand = item.get("pageName") or "Unknown Brand"
-            
-            # 3. Get the ad text and headline
             primary_text = creatives[0].get("body", "") if creatives else ""
             headline = creatives[0].get("title", "") if creatives else ""
             
-            # 4. Get the Facebook Page URI (build it from pageId)
             page_id = item.get("pageId", "")
             page_uri = f"https://www.facebook.com/{page_id}" if page_id else ""
             
