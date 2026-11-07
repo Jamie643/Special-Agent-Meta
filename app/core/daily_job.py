@@ -21,12 +21,12 @@ async def run_daily_pipeline(bot: Bot) -> dict:
     stats = {"leads_found": 0, "audits_made": 0, "error": None}
     
     try:
-        # THE COUNTRY ROTATOR: Pick a random country for this run
-        # This guarantees you get fresh stores and don't waste Apify credits.
+        # THE COUNTRY ROTATOR
         countries = ["US", "GB", "CA", "AU", "DE", "FR"]
         chosen_country = random.choice(countries)
         log.info("Today's target country: %s", chosen_country)
 
+        # Fetch exactly 15 ads to save quota
         raw_leads = fetch_stale_ads(country=chosen_country, limit=15) 
         stats["leads_found"] = len(raw_leads)
         
@@ -35,16 +35,20 @@ async def run_daily_pipeline(bot: Bot) -> dict:
             db.table("jobs").update({"finished_at": datetime.now().isoformat(), **stats}).eq("id", job_id).execute()
             return stats
 
-        audits_pushed = 0
+        processed_count = 0
         
         for raw in raw_leads:
-            if audits_pushed >= 10:
+            # HARD STOP: Only ever process 10 items per run
+            if processed_count >= 10:
                 break 
+            
+            processed_count += 1
             
             raw_brand = raw.pop("brand", "Unknown Brand")
             domain = raw.pop("domain", "unknown.com")
             page_uri = raw.pop("page_profile_uri", "")
             
+            # If domain is missing, generate a random one to avoid crashing
             if not domain or domain == "unknown.com" or domain == "unknown-.com":
                 domain = f"unknown-{random.randint(1000, 9999)}-{raw.get('ad_archive_id', 'brand')}.com"
                 
@@ -102,7 +106,6 @@ async def run_daily_pipeline(bot: Bot) -> dict:
                     text=card_text,
                     reply_markup=audit_keyboard(lead_id)
                 )
-                audits_pushed += 1
             except Exception as e:
                 log.error("Failed to send Telegram message: %s", e)
 
