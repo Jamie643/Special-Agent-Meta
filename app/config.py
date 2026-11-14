@@ -12,8 +12,9 @@ class Settings:
     TELEGRAM_BOT_TOKEN: str = os.environ["TELEGRAM_BOT_TOKEN"]
     TELEGRAM_USER_ID: int = int(os.environ["TELEGRAM_USER_ID"])
     APIFY_API_TOKEN: str = os.environ["APIFY_API_TOKEN"]
-    
-    # Primary model first, then fallback to a different server pool
-    GEMINI_MODELS: list[str] = ["gemini-3.8-flash", "gemini-2.5-pro"]
+
+    # Primary: 3.7 Flash (smarter, less congested than 3.8)
+    # Fallback: 3.5 Flash-Lite (500 RPD, high throughput)
+    GEMINI_MODELS: list[str] = ["gemini-3.7-flash", "gemini-3.5-flash-lite"]
 
 settings = Settings()
