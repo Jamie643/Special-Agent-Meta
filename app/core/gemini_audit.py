@@ -1,9 +1,10 @@
-"""Gemini audit generator — Phase 1 locked prompt."""
+"""Gemini audit generator — Phase 1 locked prompt (pro revision)."""
 
 from __future__ import annotations
 
 import json
 import logging
+import time
 
 from google import genai
 from google.genai import types
@@ -25,6 +26,7 @@ class AdInput(BaseModel):
     image_url: str | None = None
     days_active: int | None = None
 
+
 class AuditResult(BaseModel):
     diagnosis: str
     hook1_angle_name: str
@@ -41,46 +43,61 @@ class AuditResult(BaseModel):
     email_body: str
 
 
-# ---------- LOCKED prompt ----------
+# ---------- LOCKED prompt (pro revision) ----------
 
-SYSTEM = """You are a senior direct-response copywriter who writes cold outreach to e-commerce founders about their fatiguing Meta ads.
+SYSTEM = """You are a senior direct-response copywriter writing a cold email to a busy e-commerce founder about their fatiguing Meta ad.
 
-The reader is a busy founder. They do not care about ad theory. They care about: climbing CPMs, dipping ROAS, wasted budget on cold audiences, and looking tired in front of their customers.
+ABSOLUTE RULES:
+- The email MUST be under 150 words total (excluding the subject line).
+- Use short paragraphs. No walls of text.
+- The email MUST end with a low-friction question. No "would you be open to a call" — ask something small and replyable.
+- The subject line MUST be curiosity-driven and specific to the brand. Never generic.
+- NEVER diagnose their internal metrics as failing ("your CAC is up", "you're burning spend"). Frame everything as an OPPORTUNITY to protect margins or refresh creative. You don't have their dashboard.
 
-Rules:
-- DIAGNOSIS: name the founder's pain in money terms. Never use phrases like "loses urgency", "credibility", or "aesthetic". Use language like "ad fatigue is driving your CAC up".
-- HOOKS: address the CONSUMER's underlying frustration, not the product feature. Each hook is a full angle with a psychological name, a target buyer, a headline, body copy, and a specific visual direction.
-- EMAIL: give both hooks away inside the email using the exact labeled format in the worked example. Tell them to steal the angles. Do not ask for a meeting. Do not ask "would you be open to". Close with one line of credibility.
-- Never invent specific claims, prices, discount codes, or stats about the brand.
+EMAIL STRUCTURE (follow exactly):
+1. One sentence: name the specific ad + how many days it has been running.
+2. One sentence: frame the opportunity (e.g. "cold traffic starts tuning out catalog titles around week four — that's usually where CPMs creep up").
+3. "I wrote two direct-response angles based on your customers' real pain points:"
+4. Angle 1: bullet of angle name, headline, and one-sentence visual.
+5. Angle 2: bullet of angle name, headline, and one-sentence visual.
+6. One line of credibility.
+7. One low-friction question (e.g. "Want me to send the full copy and mockups for these two?").
+8. Sign off with the sender name.
+
+DIAGNOSIS (internal, not for the email):
+- 1-2 sentences explaining what is wrong with the ad in plain, observable terms. No metric assumptions.
+
+HOOKS:
+- Each hook has a psychological name, a target buyer, a headline (<= 45 chars), one-to-two sentences of body copy, and a specific visual direction.
+- Every hook must address a consumer pain point, not a product feature.
+- Visuals must be concrete enough that a designer could shoot them (e.g. "split-screen macro of punctured cone vs. flush-mounted mesh").
+
+Never invent specific claims, prices, discount codes, or stats about the brand.
 """
 
 WORKED_EXAMPLE = """
---- WORKED EXAMPLE (match this format and this energy) ---
-Input: GlowLab, 94 days, headline "New Serum Just Dropped", product: vitamin C serum.
+--- WORKED EXAMPLE (match this format) ---
+Input: AliExpress, 51 days, speaker grille ad.
 
-Output should look like:
+Subject: Your speaker grille ads (51 days running)
 
-Subject: Quick creative fix for GlowLab's Vitamin C ad (Fatigue at 94 days)
+Hi AliExpress Growth Team,
 
-Hi GlowLab team,
+I noticed your speaker grille ad has been running for 51 days straight using raw catalog text. Usually cold traffic starts tuning out catalog titles around week four — that's where CPMs typically creep up.
 
-I noticed your "New Serum Just Dropped" campaign has been running for 94 days straight. While the aesthetic is beautiful, running a launch angle for over three months inevitably triggers heavy ad fatigue — meaning your Meta CPMs are climbing, your ROAS is dipping, and you're bleeding budget on cold audiences who don't care about a "launch."
+To refresh the campaign, I wrote two direct-response angles focused on real car-audio pain points instead of generic discounts:
 
-Cold audiences don't buy drops; they buy skin transformations.
+1. The "Blown Cone" Preventer
+• Headline: One Stray Foot Can Destroy A Premium Speaker
+• Visual: Split-screen showing a punctured, exposed cone vs. your flush-mounted metal mesh grille in a finished door panel.
 
-To help protect your margins this week, I wrote two high-converting, benefit-driven angles based on your customers' deepest frustrations. Feel free to steal these and drop them right into Ad Manager:
+2. The "Clean Factory Finish" Upgrade
+• Headline: Stop Leaving Your Audio Installs Looking Half-Finished
+• Visual: Close-up garage shot of a 4-inch speaker box showing how the guard hides raw mounting screws for an OEM look.
 
-Angle 1: The "Tired Skin" Interrupt (Targets the working professional)
-• Headline: Looks Like 8 Hours Of Sleep In A Dropper.
-• Text: If your skin looks dull and tired by 2 PM, your current moisturizer isn't cutting it. Our fast-absorbing Vitamin C targets dark spots and restores morning radiance without that sticky, greasy residue under your makeup.
-• Visual Asset Idea: Split-screen overlay. Left: A phone screen showing a 7:00 AM alarm. Right: Active texture close-up showing the lightweight serum absorbing instantly into bare, glowing cheekbones.
+We build direct-response creatives like this daily to help e-commerce brands beat ad fatigue.
 
-Angle 2: The "Wasted Money" Callout (Targets the skeptical buyer)
-• Headline: Tired of Vitamin C Serums That Do Nothing?
-• Text: Most formulas oxidize before they even hit your skin. GlowLab's potent, stabilized formula delivers active antioxidants deep into the skin barrier to clear dark spots in seconds. Just 3 drops every morning for predictable luminosity.
-• Visual Asset Idea: Close-up macro shot of the glass dropper dispensing a single, pristine golden droplet onto skin in bright, natural morning sunlight.
-
-We build and deploy performance assets like this every day to scale e-commerce brands past ad fatigue. I hope these angles help lower your acquisition costs this week.
+Want me to send the full copy and mockups for these two?
 
 Best,
 James Liberty
@@ -102,7 +119,10 @@ Image reference: {ad.image_url or "(none)"}
 """
 
 
+# ---------- Client ----------
+
 _client: genai.Client | None = None
+
 
 def _get_client() -> genai.Client:
     global _client
@@ -117,21 +137,29 @@ def generate_audit(ad: AdInput) -> AuditResult:
     last_err: Exception | None = None
 
     for model_name in settings.GEMINI_MODELS:
-        try:
-            resp = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM,
-                    response_mime_type="application/json",
-                    response_schema=AuditResult,
-                    temperature=0.9,
-                ),
-            )
-            return AuditResult.model_validate(json.loads(resp.text))
-        except Exception as e:
-            log.warning("model %s failed: %s", model_name, e)
-            last_err = e
-            continue
+        for attempt in range(3):
+            try:
+                resp = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM,
+                        response_mime_type="application/json",
+                        response_schema=AuditResult,
+                        temperature=0.9,
+                    ),
+                )
+                return AuditResult.model_validate(json.loads(resp.text))
+            except Exception as e:
+                err_str = str(e)
+                log.warning(
+                    "model %s attempt %d failed: %s",
+                    model_name, attempt + 1, err_str[:120],
+                )
+                last_err = e
+                if "503" in err_str or "UNAVAILABLE" in err_str:
+                    time.sleep(5)
+                    continue
+                break
 
     raise RuntimeError(f"All Gemini models failed. Last error: {last_err}")
